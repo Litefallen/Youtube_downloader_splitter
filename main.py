@@ -27,9 +27,13 @@ def choose_res(res_list):
 
 # Define a function to extract timestamps (chapters) from video data
 def get_timestamps(length, vid_data=None):  # Access the nested data structure to extract chapter information
-    data_block = \
-        vid_data['playerOverlays']['playerOverlayRenderer']['decoratedPlayerBarRenderer']['decoratedPlayerBarRenderer'][
-            'playerBar']['multiMarkersPlayerBarRenderer']['markersMap'][0]['value']['chapters']
+    try:
+        data_block = \
+            vid_data['playerOverlays']['playerOverlayRenderer']['decoratedPlayerBarRenderer']['decoratedPlayerBarRenderer'][
+                'playerBar']['multiMarkersPlayerBarRenderer']['markersMap'][0]['value']['chapters']
+    except KeyError:
+        return None
+
     data = [(chapter_block['chapterRenderer']['title']['simpleText'],  # Extract chapter title and start time in seconds
              round(chapter_block['chapterRenderer']['timeRangeStartMillis'] * 0.001)) for chapter_block in data_block]
     data.append(("End", length))  # Add an "End" marker with the video length
@@ -92,14 +96,19 @@ async def main():
         except:
             print('The link you provided is invalid.')
     all_data = vid_download(video_link)
-    ffmpeg_coroutine = FFmpegCoroutineFactory.create()
+    if all_data[1]:
+        ffmpeg_coroutine = FFmpegCoroutineFactory.create()
 
-    with ProcessTaskPoolExecutor(max_workers=None, cancel_tasks_when_shutdown=True) as executor:
-        awaitables = (
-            executor.create_process_task(ffmpeg_coroutine.execute, create_stream_spec)
-            for create_stream_spec in [partial(vid_splitter, i, all_data) for i in range(len(all_data[1]) - 1)]
-        )
-        await asyncio.gather(*awaitables)
+        with ProcessTaskPoolExecutor(max_workers=None, cancel_tasks_when_shutdown=True) as executor:
+            awaitables = (
+                executor.create_process_task(ffmpeg_coroutine.execute, create_stream_spec)
+                for create_stream_spec in [partial(vid_splitter, i, all_data) for i in range(len(all_data[1]) - 1)]
+            )
+            await asyncio.gather(*awaitables)
+    else:
+        print('This clip does not have timestamps..')
+        # print(os.getcwd())
+        os.rmdir(os.getcwd())
     print("Do you want to remove initial full file?")
     if yes_no() == 'yes':
         for i in all_data[0]:
